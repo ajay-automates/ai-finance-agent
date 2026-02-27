@@ -1,12 +1,11 @@
 """
 Finance tools for the AI agent.
-Uses Financial Modeling Prep API (free tier, 250 req/day).
-Works reliably from cloud servers unlike yfinance.
+Uses Financial Modeling Prep API (free tier only).
+Free endpoints: /quote, /profile, /historical-price-full, /stock_news
 Get your free API key at: https://financialmodelingprep.com/developer
 """
 
 import os
-import json
 import time
 import requests
 from datetime import datetime, timedelta
@@ -16,14 +15,21 @@ BASE = "https://financialmodelingprep.com/api/v3"
 
 
 def _fmp_get(endpoint, params=None):
-    """Make a request to FMP API."""
+    """Make a request to FMP API with error handling."""
+    if not FMP_KEY:
+        return {"error": "FMP_API_KEY not set. Get a free key at financialmodelingprep.com/developer"}
     if not params:
         params = {}
     params["apikey"] = FMP_KEY
     try:
         r = requests.get(f"{BASE}/{endpoint}", params=params, timeout=15)
+        if r.status_code == 403:
+            return {"error": "FMP API access denied. Check your API key or endpoint access."}
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+        if isinstance(data, dict) and "Error Message" in data:
+            return {"error": data["Error Message"]}
+        return data
     except Exception as e:
         return {"error": str(e)}
 
@@ -55,68 +61,53 @@ def get_stock_price(ticker):
         "open": q.get("open"),
         "previous_close": q.get("previousClose"),
         "exchange": q.get("exchange", "N/A"),
-        "timestamp": q.get("timestamp") or datetime.now().isoformat()
+        "shares_outstanding": q.get("sharesOutstanding"),
+        "fifty_day_avg": q.get("priceAvg50"),
+        "two_hundred_day_avg": q.get("priceAvg200"),
     }
 
 
 def get_company_fundamentals(ticker):
-    """Get company financials: revenue, earnings, margins, P/E, debt."""
-    profile = _fmp_get(f"profile/{ticker.upper()}")
-    ratios = _fmp_get(f"ratios-ttm/{ticker.upper()}")
-    metrics = _fmp_get(f"key-metrics-ttm/{ticker.upper()}")
+    """Get company profile with financials from the free /profile endpoint."""
+    data = _fmp_get(f"profile/{ticker.upper()}")
+    if isinstance(data, dict) and "error" in data:
+        return data
+    if not data or not isinstance(data, list) or len(data) == 0:
+        return {"error": f"No profile data for '{ticker}'"}
 
-    if isinstance(profile, dict) and "error" in profile:
-        return profile
-
-    p = profile[0] if isinstance(profile, list) and profile else {}
-    r = ratios[0] if isinstance(ratios, list) and ratios else {}
-    m = metrics[0] if isinstance(metrics, list) and metrics else {}
-
+    p = data[0]
     return {
         "ticker": ticker.upper(),
         "name": p.get("companyName", "N/A"),
         "sector": p.get("sector", "N/A"),
         "industry": p.get("industry", "N/A"),
         "country": p.get("country", "N/A"),
+        "exchange": p.get("exchangeShortName", "N/A"),
         "employees": p.get("fullTimeEmployees"),
-        "description": (p.get("description", "") or "")[:300],
+        "ceo": p.get("ceo", "N/A"),
+        "website": p.get("website", "N/A"),
+        "description": (p.get("description", "") or "")[:500],
+        "ipo_date": p.get("ipoDate"),
         "financials": {
-            "revenue_per_share": m.get("revenuePerShareTTM"),
-            "net_income_per_share": m.get("netIncomePerShareTTM"),
-            "gross_margin": round((r.get("grossProfitMarginTTM") or 0) * 100, 2),
-            "operating_margin": round((r.get("operatingProfitMarginTTM") or 0) * 100, 2),
-            "net_margin": round((r.get("netProfitMarginTTM") or 0) * 100, 2),
-            "roe": round((r.get("returnOnEquityTTM") or 0) * 100, 2),
-            "roa": round((r.get("returnOnAssetsTTM") or 0) * 100, 2),
-        },
-        "valuation": {
-            "pe_ratio": r.get("peRatioTTM"),
-            "forward_pe": p.get("forwardPE"),
-            "peg_ratio": r.get("pegRatioTTM"),
-            "price_to_book": r.get("priceToBookRatioTTM"),
-            "price_to_sales": r.get("priceToSalesRatioTTM"),
-            "ev_to_ebitda": m.get("enterpriseValueOverEBITDATTM"),
             "market_cap": p.get("mktCap"),
+            "price": p.get("price"),
+            "beta": p.get("beta"),
+            "volume_avg": p.get("volAvg"),
+            "last_dividend": p.get("lastDiv"),
+            "range": p.get("range"),
         },
-        "dividends": {
-            "dividend_yield": round((r.get("dividendYielTTM") or 0) * 100, 2),
-            "payout_ratio": round((r.get("payoutRatioTTM") or 0) * 100, 2),
-        },
-        "debt": {
-            "debt_to_equity": r.get("debtEquityRatioTTM"),
-            "current_ratio": r.get("currentRatioTTM"),
-            "cash_per_share": m.get("cashPerShareTTM"),
-        }
+        "is_etf": p.get("isEtf", False),
+        "is_actively_trading": p.get("isActivelyTrading", True),
     }
 
 
 def get_price_history(ticker, period="1mo"):
-    """Get historical price data for trend analysis."""
+    """Get historical price data for trend analysis (free endpoint)."""
     period_map = {
-        "1d": 1, "5d": 5, "1mo": 30, "3mo": 90,
-        "6mo": 180, "1y": 365, "2y": 730, "5y": 1825
+        "1d": 2, "5d": 7, "1mo": 35, "3mo": 95,
+        "6mo": 185, "1y": 370, "2y": 740, "5y": 1830
     }
-    days = period_map.get(period, 30)
+    days = period_map.get(period, 35)
     start = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
     end = datetime.now().strftime("%Y-%m-%d")
 
@@ -129,84 +120,94 @@ def get_price_history(ticker, period="1mo"):
 
     historical = data.get("historical", []) if isinstance(data, dict) else []
     if not historical:
-        return {"error": f"No history for '{ticker}'"}
+        return {"error": f"No price history for '{ticker}'"}
 
     historical.reverse()
-    prices = [{
-        "date": d["date"],
-        "open": d.get("open"),
-        "high": d.get("high"),
-        "low": d.get("low"),
-        "close": d.get("close"),
-        "volume": d.get("volume")
-    } for d in historical]
 
-    closes = [p["close"] for p in prices if p["close"]]
+    prices = []
+    for d in historical:
+        prices.append({
+            "date": d.get("date"),
+            "open": d.get("open"),
+            "high": d.get("high"),
+            "low": d.get("low"),
+            "close": d.get("close"),
+            "volume": d.get("volume"),
+            "change_percent": d.get("changePercent"),
+        })
+
+    closes = [p["close"] for p in prices if p["close"] is not None]
+    if not closes:
+        return {"error": f"No valid closing prices for '{ticker}'"}
+
     return {
         "ticker": ticker.upper(),
         "period": period,
         "data_points": len(prices),
-        "prices": prices[-20:] if len(prices) > 20 else prices,
+        "prices": prices[-15:],
         "summary": {
-            "start_price": closes[0] if closes else None,
-            "end_price": closes[-1] if closes else None,
-            "change_percent": round(((closes[-1] - closes[0]) / closes[0]) * 100, 2) if len(closes) >= 2 else 0,
-            "high": max(closes) if closes else None,
-            "low": min(closes) if closes else None,
+            "start_price": closes[0],
+            "end_price": closes[-1],
+            "change_percent": round(((closes[-1] - closes[0]) / closes[0]) * 100, 2),
+            "period_high": round(max(closes), 2),
+            "period_low": round(min(closes), 2),
             "avg_volume": int(sum(p["volume"] for p in prices if p["volume"]) / max(len(prices), 1))
         }
     }
 
 
-def get_analyst_recommendations(ticker):
-    """Get analyst ratings, price targets, and recommendations."""
-    consensus = _fmp_get(f"analyst-estimates/{ticker.upper()}", {"limit": 1})
-    targets = _fmp_get(f"price-target-consensus/{ticker.upper()}")
-    grade = _fmp_get(f"grade/{ticker.upper()}", {"limit": 5})
+def get_stock_news(ticker):
+    """Get latest news for a stock (free endpoint)."""
+    data = _fmp_get(f"stock_news", {"tickers": ticker.upper(), "limit": 5})
+    if isinstance(data, dict) and "error" in data:
+        return data
+    if not data or not isinstance(data, list):
+        return {"ticker": ticker.upper(), "news": [], "message": "No recent news found"}
 
-    t = targets[0] if isinstance(targets, list) and targets else (targets if isinstance(targets, dict) else {})
-
-    recent_grades = []
-    if isinstance(grade, list):
-        for g in grade[:5]:
-            recent_grades.append({
-                "firm": g.get("gradingCompany", "N/A"),
-                "action": g.get("newGrade", "N/A"),
-                "date": g.get("date", "N/A")
-            })
+    articles = []
+    for article in data[:5]:
+        articles.append({
+            "title": article.get("title", "N/A"),
+            "source": article.get("site", "N/A"),
+            "date": article.get("publishedDate", "N/A"),
+            "summary": (article.get("text", "") or "")[:200],
+            "url": article.get("url", ""),
+        })
 
     return {
         "ticker": ticker.upper(),
-        "target_prices": {
-            "target_high": t.get("targetHigh"),
-            "target_low": t.get("targetLow"),
-            "target_mean": t.get("targetConsensus"),
-            "target_median": t.get("targetMedian"),
-        },
-        "recent_analyst_grades": recent_grades
+        "news_count": len(articles),
+        "articles": articles
     }
 
 
 def compare_stocks(tickers):
-    """Compare multiple stocks side by side on key metrics."""
+    """Compare multiple stocks side by side using the free /quote endpoint."""
+    ticker_str = ",".join([t.upper() for t in tickers[:5]])
+    data = _fmp_get(f"quote/{ticker_str}")
+
+    if isinstance(data, dict) and "error" in data:
+        return data
+    if not data or not isinstance(data, list):
+        return {"error": "No data returned for comparison"}
+
     comparisons = []
-    for ticker in tickers[:5]:
-        data = _fmp_get(f"quote/{ticker.upper()}")
-        if isinstance(data, list) and data:
-            q = data[0]
-            comparisons.append({
-                "ticker": ticker.upper(),
-                "name": q.get("name", "N/A"),
-                "price": q.get("price"),
-                "change_percent": q.get("changesPercentage"),
-                "market_cap": q.get("marketCap"),
-                "pe_ratio": q.get("pe"),
-                "eps": q.get("eps"),
-                "volume": q.get("volume"),
-                "year_high": q.get("yearHigh"),
-                "year_low": q.get("yearLow"),
-            })
-        time.sleep(0.3)
+    for q in data:
+        comparisons.append({
+            "ticker": q.get("symbol", "N/A"),
+            "name": q.get("name", "N/A"),
+            "price": q.get("price"),
+            "change_percent": q.get("changesPercentage"),
+            "market_cap": q.get("marketCap"),
+            "pe_ratio": q.get("pe"),
+            "eps": q.get("eps"),
+            "volume": q.get("volume"),
+            "avg_volume": q.get("avgVolume"),
+            "year_high": q.get("yearHigh"),
+            "year_low": q.get("yearLow"),
+            "fifty_day_avg": q.get("priceAvg50"),
+            "two_hundred_day_avg": q.get("priceAvg200"),
+        })
 
     return {
         "stocks_compared": len(comparisons),
@@ -217,7 +218,7 @@ def compare_stocks(tickers):
 TOOL_DEFINITIONS = [
     {
         "name": "get_stock_price",
-        "description": "Get the current stock price, daily change, volume, and key trading metrics for a given ticker symbol.",
+        "description": "Get current stock price, daily change, volume, market cap, P/E, EPS, 52-week range, and moving averages for a ticker.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -228,7 +229,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "get_company_fundamentals",
-        "description": "Get detailed company financials including revenue, earnings, margins, P/E ratio, debt levels, and valuation metrics.",
+        "description": "Get company profile: sector, industry, CEO, employees, description, market cap, beta, and key business info.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -239,7 +240,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "get_price_history",
-        "description": "Get historical price data for trend analysis. Supports periods: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y.",
+        "description": "Get historical daily prices for trend analysis. Supports: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -250,8 +251,8 @@ TOOL_DEFINITIONS = [
         }
     },
     {
-        "name": "get_analyst_recommendations",
-        "description": "Get analyst ratings, price targets, and buy/sell/hold recommendations.",
+        "name": "get_stock_news",
+        "description": "Get the 5 most recent news articles about a stock. Use for sentiment and recent developments.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -262,7 +263,7 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "compare_stocks",
-        "description": "Compare multiple stocks side by side on key metrics like price, market cap, P/E ratio, and more.",
+        "description": "Compare up to 5 stocks side by side on price, market cap, P/E, EPS, volume, and 52-week range.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -277,6 +278,6 @@ TOOL_FUNCTIONS = {
     "get_stock_price": lambda args: get_stock_price(args["ticker"]),
     "get_company_fundamentals": lambda args: get_company_fundamentals(args["ticker"]),
     "get_price_history": lambda args: get_price_history(args["ticker"], args.get("period", "1mo")),
-    "get_analyst_recommendations": lambda args: get_analyst_recommendations(args["ticker"]),
+    "get_stock_news": lambda args: get_stock_news(args["ticker"]),
     "compare_stocks": lambda args: compare_stocks(args["tickers"]),
 }
