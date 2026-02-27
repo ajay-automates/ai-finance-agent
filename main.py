@@ -1,6 +1,5 @@
 """
-AI Finance Agent — FastAPI Server
-Serves the web UI and handles agent requests.
+AI Finance Agent - FastAPI Server
 """
 
 from fastapi import FastAPI, Request
@@ -8,6 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import requests
 import uvicorn
 
 from app.agent import FinanceAgent
@@ -44,8 +44,6 @@ async def analyze(request: Request):
         query = body.get("query", "").strip()
         if not query:
             return JSONResponse({"error": "Query is required"}, status_code=400)
-        if len(query) > 1000:
-            return JSONResponse({"error": "Query too long (max 1000 chars)"}, status_code=400)
         result = await get_agent().analyze(query)
         return JSONResponse(result)
     except ValueError as e:
@@ -56,7 +54,37 @@ async def analyze(request: Request):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "healthy", "api_key_set": bool(os.getenv("ANTHROPIC_API_KEY")), "model": "claude-sonnet-4-20250514"}
+    return {
+        "status": "healthy",
+        "anthropic_key_set": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "fmp_key_set": bool(os.getenv("FMP_API_KEY")),
+        "fmp_key_preview": (os.getenv("FMP_API_KEY", "")[:8] + "...") if os.getenv("FMP_API_KEY") else "NOT SET",
+    }
+
+
+@app.get("/api/test-fmp")
+async def test_fmp():
+    """Debug: test FMP API directly to see what works."""
+    fmp_key = os.getenv("FMP_API_KEY", "")
+    if not fmp_key:
+        return JSONResponse({"error": "FMP_API_KEY not set"})
+
+    results = {}
+    try:
+        r = requests.get(f"https://financialmodelingprep.com/api/v3/quote/AAPL?apikey={fmp_key}", timeout=10)
+        results["v3_quote_status"] = r.status_code
+        results["v3_quote_response"] = r.text[:500]
+    except Exception as e:
+        results["v3_quote_error"] = str(e)
+
+    try:
+        r = requests.get(f"https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey={fmp_key}", timeout=10)
+        results["stable_quote_status"] = r.status_code
+        results["stable_quote_response"] = r.text[:500]
+    except Exception as e:
+        results["stable_quote_error"] = str(e)
+
+    return JSONResponse(results)
 
 
 if __name__ == "__main__":
