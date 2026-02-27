@@ -1,17 +1,27 @@
 """
 Finance tools for the AI agent.
 Uses yfinance (free, no API key) for real-time market data.
+Custom session headers to work on cloud servers (Railway/Render/etc).
 """
 
 import yfinance as yf
 from datetime import datetime, timedelta
 import json
+import requests
+
+# Custom session with browser-like headers to avoid Yahoo blocking cloud IPs
+session = requests.Session()
+session.headers.update({
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+})
 
 
-def get_stock_price(ticker: str) -> dict:
+def get_stock_price(ticker):
     """Get current stock price, change, and key trading metrics."""
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=session)
         info = stock.info
         hist = stock.history(period="5d")
 
@@ -40,10 +50,10 @@ def get_stock_price(ticker: str) -> dict:
         return {"error": str(e)}
 
 
-def get_company_fundamentals(ticker: str) -> dict:
+def get_company_fundamentals(ticker):
     """Get company financials: revenue, earnings, margins, P/E, debt."""
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=session)
         info = stock.info
 
         return {
@@ -85,10 +95,10 @@ def get_company_fundamentals(ticker: str) -> dict:
         return {"error": str(e)}
 
 
-def get_price_history(ticker: str, period: str = "1mo") -> dict:
+def get_price_history(ticker, period="1mo"):
     """Get historical price data for charting and trend analysis."""
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=session)
         hist = stock.history(period=period)
 
         if hist.empty:
@@ -124,10 +134,10 @@ def get_price_history(ticker: str, period: str = "1mo") -> dict:
         return {"error": str(e)}
 
 
-def get_analyst_recommendations(ticker: str) -> dict:
+def get_analyst_recommendations(ticker):
     """Get analyst ratings, price targets, and recommendations."""
     try:
-        stock = yf.Ticker(ticker)
+        stock = yf.Ticker(ticker, session=session)
         info = stock.info
 
         recs = stock.recommendations
@@ -162,12 +172,12 @@ def get_analyst_recommendations(ticker: str) -> dict:
         return {"error": str(e)}
 
 
-def compare_stocks(tickers: list) -> dict:
+def compare_stocks(tickers):
     """Compare multiple stocks side by side on key metrics."""
     try:
         comparisons = []
         for ticker in tickers[:5]:
-            stock = yf.Ticker(ticker)
+            stock = yf.Ticker(ticker, session=session)
             info = stock.info
             hist = stock.history(period="1mo")
 
@@ -198,7 +208,7 @@ def compare_stocks(tickers: list) -> dict:
 TOOL_DEFINITIONS = [
     {
         "name": "get_stock_price",
-        "description": "Get the current stock price, daily change, volume, and key trading metrics for a given ticker symbol. Use this when the user asks about current price, how a stock is doing today, or wants real-time market data.",
+        "description": "Get the current stock price, daily change, volume, and key trading metrics for a given ticker symbol.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -209,11 +219,11 @@ TOOL_DEFINITIONS = [
     },
     {
         "name": "get_company_fundamentals",
-        "description": "Get detailed company financials including revenue, earnings, margins, P/E ratio, debt levels, and valuation metrics. Use this when the user asks about a company's financial health, fundamentals, or valuation.",
+        "description": "Get detailed company financials including revenue, earnings, margins, P/E ratio, debt levels, and valuation metrics.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "ticker": {"type": "string", "description": "Stock ticker symbol (e.g., AAPL, GOOGL, NVDA)"}
+                "ticker": {"type": "string", "description": "Stock ticker symbol"}
             },
             "required": ["ticker"]
         }
@@ -225,7 +235,7 @@ TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "ticker": {"type": "string", "description": "Stock ticker symbol"},
-                "period": {"type": "string", "description": "Time period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, max", "default": "1mo"}
+                "period": {"type": "string", "description": "Time period", "default": "1mo"}
             },
             "required": ["ticker"]
         }
