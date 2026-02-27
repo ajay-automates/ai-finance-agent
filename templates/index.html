@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Finance Agent</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0a; color: #e0e0e0; min-height: 100vh; }
+        .container { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; }
+        header { text-align: center; margin-bottom: 2rem; }
+        header h1 { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 0.5rem; }
+        header p { color: #888; font-size: 0.95rem; }
+        .input-area { background: #141414; border: 1px solid #222; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .input-row { display: flex; gap: 0.75rem; }
+        .input-row input { flex: 1; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 0.85rem 1rem; color: #e0e0e0; font-size: 1rem; outline: none; transition: border-color 0.2s; }
+        .input-row input:focus { border-color: #60a5fa; }
+        .input-row input::placeholder { color: #555; }
+        .input-row button { background: linear-gradient(135deg, #3b82f6, #8b5cf6); border: none; border-radius: 8px; padding: 0.85rem 1.5rem; color: white; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: opacity 0.2s; white-space: nowrap; }
+        .input-row button:hover { opacity: 0.9; }
+        .input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .quick-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+        .quick-actions button { background: #1a1a1a; border: 1px solid #333; border-radius: 6px; padding: 0.4rem 0.8rem; color: #aaa; font-size: 0.8rem; cursor: pointer; transition: all 0.2s; }
+        .quick-actions button:hover { border-color: #60a5fa; color: #60a5fa; }
+        .loading { display: none; text-align: center; padding: 3rem 1rem; }
+        .loading.active { display: block; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #222; border-top-color: #60a5fa; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading p { color: #888; font-size: 0.9rem; }
+        .loading .tool-log { margin-top: 1rem; text-align: left; background: #141414; border-radius: 8px; padding: 1rem; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; color: #60a5fa; max-height: 120px; overflow-y: auto; }
+        .result { display: none; background: #141414; border: 1px solid #222; border-radius: 12px; overflow: hidden; }
+        .result.active { display: block; }
+        .result-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #1a1a1a; border-bottom: 1px solid #222; }
+        .result-header h3 { font-size: 0.9rem; color: #60a5fa; }
+        .metrics { display: flex; gap: 1rem; flex-wrap: wrap; }
+        .metric { font-size: 0.75rem; color: #666; }
+        .metric span { color: #aaa; font-weight: 600; }
+        .tools-used { display: flex; gap: 0.4rem; flex-wrap: wrap; padding: 0.75rem 1.5rem; border-bottom: 1px solid #1a1a1a; }
+        .tool-badge { background: #1e293b; border: 1px solid #334155; border-radius: 4px; padding: 0.2rem 0.6rem; font-size: 0.7rem; color: #60a5fa; font-family: monospace; }
+        .tool-badge.success { border-color: #22c55e40; color: #4ade80; }
+        .tool-badge.failed { border-color: #ef444440; color: #f87171; }
+        .analysis-content { padding: 1.5rem; line-height: 1.7; font-size: 0.95rem; }
+        .analysis-content h1, .analysis-content h2, .analysis-content h3 { color: #e0e0e0; margin: 1.25rem 0 0.5rem; }
+        .analysis-content h1 { font-size: 1.3rem; }
+        .analysis-content h2 { font-size: 1.15rem; color: #60a5fa; }
+        .analysis-content h3 { font-size: 1rem; color: #a78bfa; }
+        .analysis-content p { margin-bottom: 0.75rem; color: #ccc; }
+        .analysis-content strong { color: #e0e0e0; }
+        .analysis-content ul, .analysis-content ol { margin: 0.5rem 0 0.75rem 1.5rem; color: #ccc; }
+        .analysis-content li { margin-bottom: 0.3rem; }
+        .analysis-content code { background: #1e293b; padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.85rem; color: #f59e0b; }
+        .analysis-content table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; }
+        .analysis-content th, .analysis-content td { padding: 0.5rem 0.75rem; border: 1px solid #222; text-align: left; font-size: 0.85rem; }
+        .analysis-content th { background: #1a1a1a; color: #60a5fa; font-weight: 600; }
+        .error { display: none; background: #1a0a0a; border: 1px solid #4a1515; border-radius: 12px; padding: 1.5rem; color: #f87171; }
+        .error.active { display: block; }
+        footer { text-align: center; margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #1a1a1a; color: #555; font-size: 0.8rem; }
+        footer a { color: #60a5fa; text-decoration: none; }
+        @media (max-width: 640px) { .input-row { flex-direction: column; } .metrics { flex-direction: column; gap: 0.25rem; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>AI Finance Agent</h1>
+            <p>Claude-powered stock analysis with real-time market data and autonomous tool calling</p>
+        </header>
+        <div class="input-area">
+            <div class="input-row">
+                <input type="text" id="query" placeholder="e.g. Analyze NVIDIA stock — is it overvalued?" autofocus>
+                <button id="analyzeBtn" onclick="analyze()">Analyze</button>
+            </div>
+            <div class="quick-actions">
+                <button onclick="setQuery('Analyze NVDA — price, fundamentals, and analyst outlook')">NVDA Analysis</button>
+                <button onclick="setQuery('Compare AAPL vs MSFT vs GOOGL')">Compare Big Tech</button>
+                <button onclick="setQuery('Is TSLA overvalued? Check P/E, growth, and targets')">TSLA Valuation</button>
+                <button onclick="setQuery('Give me a full breakdown of META stock')">META Deep Dive</button>
+                <button onclick="setQuery('Which is a better buy: AMD or INTC?')">AMD vs INTC</button>
+                <button onclick="setQuery('Analyze AMZN 6-month trend and fundamentals')">AMZN Trend</button>
+            </div>
+        </div>
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Agent is analyzing... Claude is deciding which tools to call.</p>
+            <div class="tool-log" id="toolLog"></div>
+        </div>
+        <div class="error" id="error"></div>
+        <div class="result" id="result">
+            <div class="result-header">
+                <h3>Analysis Complete</h3>
+                <div class="metrics" id="metrics"></div>
+            </div>
+            <div class="tools-used" id="toolsUsed"></div>
+            <div class="analysis-content" id="analysisContent"></div>
+        </div>
+        <footer>
+            <p>Built by <a href="https://github.com/ajay-automates" target="_blank">Ajay Kumar Reddy Nelavetla</a> · Claude Sonnet · Real-time data via Yahoo Finance</p>
+            <p style="margin-top: 0.3rem;">For informational purposes only. Not financial advice.</p>
+        </footer>
+    </div>
+    <script>
+        const queryInput = document.getElementById('query');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const loading = document.getElementById('loading');
+        const toolLog = document.getElementById('toolLog');
+        const error = document.getElementById('error');
+        const result = document.getElementById('result');
+        queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') analyze(); });
+        function setQuery(q) { queryInput.value = q; queryInput.focus(); }
+        async function analyze() {
+            const query = queryInput.value.trim();
+            if (!query) return;
+            analyzeBtn.disabled = true;
+            analyzeBtn.textContent = 'Analyzing...';
+            loading.classList.add('active');
+            error.classList.remove('active');
+            result.classList.remove('active');
+            toolLog.innerHTML = '> Sending query to Claude...\n';
+            try {
+                const startTime = Date.now();
+                const toolInterval = setInterval(() => {
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    const msgs = ['> Claude is selecting tools...', '> Fetching real-time market data...', '> Analyzing company fundamentals...', '> Processing analyst recommendations...', '> Claude is synthesizing insights...'];
+                    const idx = Math.min(Math.floor(elapsed / 2), msgs.length - 1);
+                    toolLog.innerHTML = msgs.slice(0, idx + 1).join('\n');
+                    toolLog.scrollTop = toolLog.scrollHeight;
+                }, 1500);
+                const res = await fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) });
+                clearInterval(toolInterval);
+                const data = await res.json();
+                if (data.error) { error.textContent = data.error; error.classList.add('active'); loading.classList.remove('active'); analyzeBtn.disabled = false; analyzeBtn.textContent = 'Analyze'; return; }
+                const m = data.metrics;
+                document.getElementById('metrics').innerHTML = `<div class="metric">Tools: <span>${m.total_tools_called}</span></div><div class="metric">Tokens: <span>${m.total_tokens.toLocaleString()}</span></div><div class="metric">Cost: <span>$${m.estimated_cost_usd}</span></div><div class="metric">Time: <span>${m.latency_seconds}s</span></div>`;
+                document.getElementById('toolsUsed').innerHTML = data.tools_called.map(t => `<span class="tool-badge ${t.success ? 'success' : 'failed'}">${t.tool}(${JSON.stringify(t.input).replace(/[{}"]/g, '')})</span>`).join('');
+                document.getElementById('analysisContent').innerHTML = markdownToHtml(data.analysis);
+                loading.classList.remove('active');
+                result.classList.add('active');
+            } catch (err) { error.textContent = `Request failed: ${err.message}`; error.classList.add('active'); loading.classList.remove('active'); }
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = 'Analyze';
+        }
+        function markdownToHtml(md) {
+            return md.replace(/### (.*?)$/gm, '<h3>$1</h3>').replace(/## (.*?)$/gm, '<h2>$1</h2>').replace(/# (.*?)$/gm, '<h1>$1</h1>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`(.*?)`/g, '<code>$1</code>').replace(/^\- (.*?)$/gm, '<li>$1</li>').replace(/^\d+\. (.*?)$/gm, '<li>$1</li>').replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
+        }
+    </script>
+</body>
+</html>
